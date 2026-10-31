@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from uuid import uuid4
+import hashlib
 
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -9,15 +9,12 @@ from sentence_transformers import SentenceTransformer
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CHROMA_PATH = PROJECT_ROOT / ".chroma"
 MODEL_NAME = "all-MiniLM-L6-v2"
-
-# Cosine distance: lower values indicate more similar results.
 MAX_COSINE_DISTANCE = 0.65
 
 
 class VectorStore:
-    """Store document chunks and retrieve relevant passages."""
-
     def __init__(self):
+        """Initialize the persistent ChromaDB collection and embedding model."""
         self.client = chromadb.PersistentClient(
             path=str(CHROMA_PATH)
         )
@@ -30,51 +27,137 @@ class VectorStore:
         self.model = SentenceTransformer(MODEL_NAME)
 
     def add_chunks(self, chunks):
-        """Add document chunks with source and page metadata."""
+        """
+        Store document chunks.
+
+        Existing chunks belonging to the same source filename are replaced.
+        Chunks from other source filenames are preserved.
+        """
         if not chunks:
             return 0
 
-        # Avoid adding empty text chunks.
         valid_chunks = [
-            item for item in chunks
+            item
+            for item in chunks
             if item.get("text", "").strip()
         ]
 
         if not valid_chunks:
             return 0
 
-        texts = [item["text"].strip() for item in valid_chunks]
+        # Normalize and validate metadata before changing stored records.
+        prepared_chunks = []
 
+        for item in valid_chunks:
+            prepared_chunks.append({
+                "text": item["text"].strip(),
+                "source": item.get("source", "Unknown"),
+                "page": int(item.get("page", 1)),
+            })
+
+        # Generate deterministic IDs so identical chunks have stable IDs.
+        ids = []
+
+        for item in prepared_chunks:
+            key = (
+                f'{item["source"]}|'
+                f'{item["page"]}|'
+                f'{item["text"]}'
+            )
+
+            ids.append(
+                hashlib.sha256(
+                    key.encode("utf-8")
+                ).hexdigest()
+            )
+
+        texts = [
+            item["text"]
+            for item in prepared_chunks
+        ]
+
+        metadatas = [
+            {
+                "source": item["source"],
+                "page": item["page"],
+            }
+            for item in prepared_chunks
+        ]
+
+        # Calculate embeddings before modifying the existing collection.
         embeddings = self.model.encode(
             texts,
             normalize_embeddings=True,
         ).tolist()
 
-        ids = [str(uuid4()) for _ in valid_chunks]
+        # Replace existing records for the source filenames being indexed.
+        # Other documents in the collection remain untouched.
+        sources = {
+            item["source"]
+            for item in prepared_chunks
+        }
 
-        metadatas = [
-            {
-                "source": item.get("source", "Unknown"),
-                "page": int(item.get("page", 1)),
-            }
-            for item in valid_chunks
-        ]
+        for source in sources:
+            existing = self.collection.get(
+                where={"source": source},
+                include=["metadatas"],
+            )
 
-        self.collection.add(
+            existing_ids = existing["ids"]
+
+            # Keep records that will be re-created with the same IDs.
+            # Delete only obsolete records for this source.
+            ids_to_keep = set(ids)
+            obsolete_ids = [
+                existing_id
+                for existing_id in existing_ids
+                if existing_id not in ids_to_keep
+            ]
+
+            if obsolete_ids:
+                self.collection.delete(ids=obsolete_ids)
+
+        # Upsert inserts new chunks and updates matching deterministic IDs.
+        self.collection.upsert(
             ids=ids,
             documents=texts,
             embeddings=embeddings,
             metadatas=metadatas,
         )
 
-        return len(valid_chunks)
+        return len(prepared_chunks)
 
-    def search(self, question, top_k=4):
-        """Return relevant, non-duplicate document passages."""
+    def search(self, question, top_k=4, source=None):
+        """
+        Retrieve relevant passages.
+
+        Args:
+            question: The user's question.
+            top_k: Maximum number of unique passages to return.
+            source: Optional exact filename filter.
+
+        Returns:
+            A list of dictionaries containing text, source, page, and distance.
+        """
         if not question or not question.strip():
             return []
 
-        total = self.collection.count()
+        if top_k <= 0:
+            return []
+
+        # Filter by exact source filename when requested.
+        filters = {"source": source} if source else None
+
+        # Collection.count() in this environment does not accept `where`.
+        # Use get() to count records when filtering by source.
+        if filters:
+            filtered_records = self.collection.get(
+                where=filters,
+                include=["metadatas"],
+            )
+            total = len(filtered_records["ids"])
+        else:
+            total = self.collection.count()
 
         if total == 0:
             return []
@@ -84,18 +167,20 @@ class VectorStore:
             normalize_embeddings=True,
         ).tolist()
 
-        # Retrieve extra candidates so duplicates can be removed.
-        candidate_count = min(max(top_k * 3, top_k), total)
-
-        results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=candidate_count,
-            include=[
+        query_args = {
+            "query_embeddings": query_embedding,
+            "n_results": min(top_k * 3, total),
+            "include": [
                 "documents",
                 "metadatas",
                 "distances",
             ],
-        )
+        }
+
+        if filters:
+            query_args["where"] = filters
+
+        results = self.collection.query(**query_args)
 
         matches = []
         seen_chunks = set()
@@ -105,15 +190,22 @@ class VectorStore:
         distances = results["distances"][0]
 
         for text, metadata, distance in zip(
-            documents, metadatas, distances
+            documents,
+            metadatas,
+            distances,
         ):
-            normalized_text = " ".join(text.split()).casefold()
+            if not text or not text.strip():
+                continue
 
-            # Ignore exact duplicate passages.
+            normalized_text = " ".join(
+                text.split()
+            ).casefold()
+
+            # Avoid returning identical text more than once.
             if normalized_text in seen_chunks:
                 continue
 
-            # Ignore candidates that are too dissimilar.
+            # Lower cosine distance means greater similarity.
             if distance > MAX_COSINE_DISTANCE:
                 continue
 

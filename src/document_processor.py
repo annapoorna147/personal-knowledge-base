@@ -34,20 +34,29 @@ def extract_text(uploaded_file):
             })
 
     else:
-        raise ValueError(f"Unsupported file type: {filename}")
+        raise ValueError(
+            f"Unsupported file type: {filename}"
+        )
 
     return pages
 
 
-def split_into_chunks(text, chunk_size=1000, overlap=150):
-    """Split text into overlapping character-based chunks."""
+def split_into_chunks(text, chunk_size=700, overlap=100):
+    """
+    Split text into smaller overlapping chunks.
+
+    Smaller chunks help retrieval focus on individual topics.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive.")
 
     if overlap < 0 or overlap >= chunk_size:
-        raise ValueError("overlap must be between 0 and chunk_size.")
+        raise ValueError(
+            "overlap must be between 0 and chunk_size."
+        )
 
     text = " ".join(text.split())
+
     chunks = []
     start = 0
 
