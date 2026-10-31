@@ -7,12 +7,14 @@ questions with answers grounded in retrieved passages.
 ## Features
 
 - PDF and TXT document ingestion
-- Text extraction and overlapping chunking
+- Text extraction and section-aware chunking
 - Semantic embeddings using Sentence Transformers
 - Persistent vector storage with ChromaDB
 - Question answering using the Gemini API
 - Source-aware answers with document and page references
 - Streamlit web interface
+- Duplicate-upload protection within a session
+- Automated tests for document processing, retrieval, and answer generation
 
 ## Architecture
 
@@ -91,6 +93,16 @@ personal-knowledge-base/
 └── data/
 ```
 
+## Run Tests
+
+Activate your virtual environment and run:
+
+```bash
+python -m pytest -q
+```
+
+The current test suite contains 24 passing tests, including mocked Gemini API retry tests.
+
 ## Current Limitations
 
 - Retrieval quality depends on document text extraction and chunking.
@@ -105,8 +117,8 @@ the local ChromaDB database to a public repository.
 
 ## Future Improvements
 
-- Automated tests for document processing and retrieval
+- OCR support for scanned PDFs
 - Improved document management and duplicate detection
-- Better error handling and observability
+- Improved error handling and observability
 - OCR and additional document formats
 - Deployment with appropriate persistent storage
