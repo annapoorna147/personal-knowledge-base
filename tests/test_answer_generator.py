@@ -113,3 +113,118 @@ def test_generate_answer_handles_empty_gemini_response(
     )
 
     assert "empty response" in answer.lower()
+
+
+def test_generate_answer_retries_temporary_api_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(answer_generator.time, "sleep", lambda _: None)
+
+    class FakeAPIError(Exception):
+        def __init__(self, message, code):
+            super().__init__(message)
+            self.code = code
+
+    monkeypatch.setattr(answer_generator.errors, "APIError", FakeAPIError)
+
+    class FakeModels:
+        calls = 0
+
+        def generate_content(self, *, model, contents):
+            self.calls += 1
+            if self.calls == 1:
+                raise FakeAPIError("Temporary server error", 503)
+            return SimpleNamespace(text="Answer recovered. [Source 1]")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.models = FakeModels()
+
+    client = FakeClient()
+    monkeypatch.setattr(
+        answer_generator.genai,
+        "Client",
+        lambda **kwargs: client,
+    )
+
+    answer = answer_generator.generate_answer(
+        "What is Python?",
+        [{"text": "Python is a programming language.", "source": "notes.txt", "page": 1}],
+    )
+
+    assert answer == "Answer recovered. [Source 1]"
+    assert client.models.calls == 2
+
+
+def test_generate_answer_does_not_retry_permanent_api_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    class FakeAPIError(Exception):
+        def __init__(self, message, code):
+            super().__init__(message)
+            self.code = code
+
+    monkeypatch.setattr(answer_generator.errors, "APIError", FakeAPIError)
+
+    class FakeModels:
+        calls = 0
+
+        def generate_content(self, *, model, contents):
+            self.calls += 1
+            raise FakeAPIError("Invalid request", 400)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.models = FakeModels()
+
+    client = FakeClient()
+    monkeypatch.setattr(
+        answer_generator.genai,
+        "Client",
+        lambda **kwargs: client,
+    )
+
+    answer = answer_generator.generate_answer(
+        "What is Python?",
+        [{"text": "Python is a programming language.", "source": "notes.txt", "page": 1}],
+    )
+
+    assert "API request failed" in answer
+    assert client.models.calls == 1
+
+
+def test_generate_answer_returns_friendly_message_after_retries(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(answer_generator.time, "sleep", lambda _: None)
+
+    class FakeAPIError(Exception):
+        def __init__(self, message, code):
+            super().__init__(message)
+            self.code = code
+
+    monkeypatch.setattr(answer_generator.errors, "APIError", FakeAPIError)
+
+    class FakeModels:
+        calls = 0
+
+        def generate_content(self, *, model, contents):
+            self.calls += 1
+            raise FakeAPIError("Service unavailable", 503)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.models = FakeModels()
+
+    client = FakeClient()
+    monkeypatch.setattr(
+        answer_generator.genai,
+        "Client",
+        lambda **kwargs: client,
+    )
+
+    answer = answer_generator.generate_answer(
+        "What is Python?",
+        [{"text": "Python is a programming language.", "source": "notes.txt", "page": 1}],
+    )
+
+    assert "temporarily busy or unavailable" in answer
+    assert client.models.calls == answer_generator.MAX_ATTEMPTS
