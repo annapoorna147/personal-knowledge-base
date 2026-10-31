@@ -16,17 +16,17 @@ MAX_ATTEMPTS = 3
 def generate_answer(question, retrieved_chunks):
     """Generate a grounded answer with basic retry handling."""
 
+    if not retrieved_chunks:
+        return (
+            "I couldn't find relevant passages in your knowledge base. "
+            "Try uploading a document or asking another question."
+        )
+
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
         raise ValueError(
             "GEMINI_API_KEY is missing. Add it to your .env file."
-        )
-
-    if not retrieved_chunks:
-        return (
-            "I couldn't find relevant passages in your knowledge base. "
-            "Try uploading a document or asking another question."
         )
 
     client = genai.Client(
