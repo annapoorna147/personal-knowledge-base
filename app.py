@@ -3,7 +3,7 @@ import hashlib
 
 import streamlit as st
 
-from src.document_processor import extract_text, split_into_chunks
+from src.document_processor import extract_text, split_into_sections
 from src.vector_store import VectorStore
 from src.answer_generator import generate_answer
 
@@ -78,7 +78,7 @@ with st.sidebar:
 
                         # Split each page's text separately.
                         for page in extracted_pages:
-                            page_chunks = split_into_chunks(
+                            page_chunks = split_into_sections(
                                 page["text"]
                             )
 

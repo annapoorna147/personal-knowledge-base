@@ -42,11 +42,7 @@ def extract_text(uploaded_file):
 
 
 def split_into_chunks(text, chunk_size=700, overlap=100):
-    """
-    Split text into smaller overlapping chunks.
-
-    Smaller chunks help retrieval focus on individual topics.
-    """
+    """Split text into overlapping chunks with normalized whitespace."""
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive.")
 
@@ -56,7 +52,6 @@ def split_into_chunks(text, chunk_size=700, overlap=100):
         )
 
     text = " ".join(text.split())
-
     chunks = []
     start = 0
 
@@ -71,5 +66,100 @@ def split_into_chunks(text, chunk_size=700, overlap=100):
             break
 
         start = end - overlap
+
+    return chunks
+
+
+def split_into_sections(text, chunk_size=700):
+    """Split a document by headings and lines to preserve context."""
+    import re
+
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive.")
+
+    headings = {
+        "PROFILE",
+        "TECHNICAL SKILLS",
+        "PROJECTS",
+        "AI Quiz Generator",
+        "RUBIX — Ultimate Edition",
+        "DSA & PROBLEM SOLVING",
+        "EDUCATION",
+        "CERTIFICATIONS & ACHIEVEMENTS",
+    }
+
+    lines = [
+        re.sub(r"\s+", " ", line).strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    sections = []
+    heading = None
+    section_lines = []
+
+    for line in lines:
+        if line in headings:
+            if heading is not None or section_lines:
+                sections.append((heading, section_lines))
+            heading = line
+            section_lines = []
+        else:
+            section_lines.append(line)
+
+    if heading is not None or section_lines:
+        sections.append((heading, section_lines))
+
+    chunks = []
+
+    for heading, section_lines in sections:
+        prefix = f"{heading}\n" if heading else ""
+        current = prefix
+
+        for line in section_lines:
+            candidate = current + ("\n" if current.strip() else "") + line
+
+            if len(candidate) <= chunk_size:
+                current = candidate
+                continue
+
+            if current.strip():
+                chunks.append(current.strip())
+
+            current = prefix
+
+            # Break unusually long lines at word boundaries.
+            words = line.split()
+            piece = ""
+
+            for word in words:
+                proposed = f"{piece} {word}".strip()
+
+                if len(current) + len(proposed) > chunk_size:
+                    if piece:
+                        chunks.append((current + piece).strip())
+                        current = prefix
+                        piece = word
+                    elif current.strip():
+                        chunks.append(current.strip())
+                        current = ""
+                        piece = word
+                    else:
+                        # Handle a single word longer than the limit.
+                        for offset in range(0, len(word), chunk_size):
+                            part = word[offset:offset + chunk_size]
+                            if offset + chunk_size < len(word):
+                                chunks.append(part)
+                            else:
+                                current = part
+                        piece = ""
+                else:
+                    piece = proposed
+
+            if piece:
+                current += piece
+
+        if current.strip():
+            chunks.append(current.strip())
 
     return chunks
