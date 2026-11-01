@@ -115,3 +115,65 @@ def test_search_removes_duplicate_passages(store):
 
     assert len(results) == 1
     assert results[0]["text"] == "python and machine learning"
+
+
+def test_reindexing_same_chunk_does_not_increase_count(store):
+    chunk = {
+        "text": "python and machine learning",
+        "source": "notes.txt",
+        "page": 1,
+    }
+
+    store.add_chunks([chunk])
+    count_after_first_index = store.collection.count()
+
+    store.add_chunks([chunk])
+    count_after_second_index = store.collection.count()
+
+    assert count_after_first_index == 1
+    assert count_after_second_index == count_after_first_index
+
+
+def test_file_hash_is_stored_and_detected(store):
+    chunk = {
+        "text": "python and machine learning",
+        "source": "notes.txt",
+        "page": 1,
+        "file_hash": "sha256-example",
+    }
+
+    assert not store.is_file_indexed("notes.txt", "sha256-example")
+
+    store.add_chunks([chunk])
+
+    assert store.is_file_indexed("notes.txt", "sha256-example")
+    assert not store.is_file_indexed("notes.txt", "different-hash")
+    assert not store.is_file_indexed("other.txt", "sha256-example")
+
+def test_updated_file_replaces_old_chunks(store):
+    store.add_chunks([{
+        "text": "python and machine learning",
+        "source": "notes.txt",
+        "page": 1,
+        "file_hash": "old-hash",
+    }])
+
+    store.add_chunks([{
+        "text": "unrelated cooking recipe",
+        "source": "notes.txt",
+        "page": 1,
+        "file_hash": "new-hash",
+    }])
+
+    saved = store.collection.get(
+        where={"source": "notes.txt"},
+        include=["documents", "metadatas"],
+    )
+
+    assert saved["documents"] == ["unrelated cooking recipe"]
+    assert saved["metadatas"][0]["file_hash"] == "new-hash"
+    assert store.collection.count() == 1
+    assert not store.is_file_indexed("notes.txt", "old-hash")
+    assert store.is_file_indexed("notes.txt", "new-hash")
+
+    print("Updated-file replacement test passed.")

@@ -67,6 +67,15 @@ with st.sidebar:
                     )
                     continue
 
+                if store.is_file_indexed(
+                    uploaded_file.name, file_hash
+                ):
+                    st.session_state.indexed_files.add(file_signature)
+                    st.info(
+                        f"{uploaded_file.name} is already indexed."
+                    )
+                    continue
+
                 try:
                     with st.spinner(
                         f"Processing {uploaded_file.name}..."
@@ -88,6 +97,7 @@ with st.sidebar:
                                         "text": chunk_text,
                                         "source": page["source"],
                                         "page": page["page"],
+                                        "file_hash": file_hash,
                                     }
                                 )
 

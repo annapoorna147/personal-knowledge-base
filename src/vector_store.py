@@ -26,6 +26,22 @@ class VectorStore:
 
         self.model = SentenceTransformer(MODEL_NAME)
 
+    def is_file_indexed(self, source, file_hash):
+        """Return whether this exact file version has indexed chunks."""
+        if not source or not file_hash:
+            return False
+
+        result = self.collection.get(
+            where={
+                "$and": [
+                    {"source": source},
+                    {"file_hash": file_hash},
+                ]
+            },
+            include=["metadatas"],
+        )
+        return bool(result["ids"])
+
     def add_chunks(self, chunks):
         """
         Store document chunks.
@@ -53,6 +69,7 @@ class VectorStore:
                 "text": item["text"].strip(),
                 "source": item.get("source", "Unknown"),
                 "page": int(item.get("page", 1)),
+                "file_hash": item.get("file_hash", ""),
             })
 
         # Generate deterministic IDs so identical chunks have stable IDs.
@@ -80,6 +97,7 @@ class VectorStore:
             {
                 "source": item["source"],
                 "page": item["page"],
+                "file_hash": item["file_hash"],
             }
             for item in prepared_chunks
         ]
