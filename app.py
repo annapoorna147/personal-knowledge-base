@@ -134,6 +134,27 @@ with st.sidebar:
     st.caption("Document vectors are stored locally.")
 
 
+# Choose which indexed document to search.
+store_for_selection = get_vector_store()
+stored_records = store_for_selection.collection.get(
+    include=["metadatas"]
+)
+
+available_sources = sorted({
+    metadata["source"]
+    for metadata in stored_records["metadatas"]
+    if metadata and metadata.get("source")
+})
+
+source_options = ["All documents"] + available_sources
+
+selected_source = st.selectbox(
+    "Choose a document to ask questions about",
+    source_options,
+    help="Select a specific document to restrict answers to it."
+)
+
+
 # Display previous chat messages.
 st.subheader("Ask your knowledge base")
 
@@ -172,7 +193,15 @@ if question:
             "Searching documents and generating an answer..."
         ):
             store = get_vector_store()
-            matches = store.search(question, top_k=4)
+            matches = store.search(
+                question,
+                top_k=4,
+                source=(
+                    selected_source
+                    if selected_source != "All documents"
+                    else None
+                ),
+            )
 
             answer = generate_answer(question, matches)
 
