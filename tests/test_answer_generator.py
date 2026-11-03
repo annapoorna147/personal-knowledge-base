@@ -80,6 +80,18 @@ def test_generate_answer_uses_retrieved_context(
     assert "notes.txt" in captured["contents"]
     assert "page 2" in captured["contents"]
     assert "[Source 1]" in captured["contents"]
+    assert (
+        "Answer the question using only the document excerpts below."
+        in captured["contents"]
+    )
+    assert (
+        "If the answer is not available, say so."
+        in captured["contents"]
+    )
+    assert (
+        "Cite supporting excerpts as [Source 1], [Source 2], etc."
+        in captured["contents"]
+    )
 
 
 def test_generate_answer_handles_empty_gemini_response(
