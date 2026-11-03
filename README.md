@@ -101,7 +101,7 @@ Activate your virtual environment and run:
 python -m pytest -q
 ```
 
-The current test suite contains 24 passing tests, including mocked Gemini API retry tests.
+The current test suite contains 27 tests covering document processing, retrieval, and answer generation.
 
 ## Current Limitations
 
@@ -117,8 +117,7 @@ the local ChromaDB database to a public repository.
 
 ## Future Improvements
 
-- OCR support for scanned PDFs
+- OCR support for scanned PDFs and additional document formats
 - Improved document management and duplicate detection
 - Improved error handling and observability
-- OCR and additional document formats
 - Deployment with appropriate persistent storage
